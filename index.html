@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <script>
+      /*
+        lrf: weird lines that overwrite themselves
+        llbrlfb: weird straights + triangles and loopy overlay effects
+        lrbf: looks like motherboards, specifically weird on 4
+        bllrrf: 
+        llbrlfb: weird moment when they split
+        rlrbf OR lrlbf: 30 angles
+        rlrfb OR lrlfb: 45 angles
+        lrbr: weird straight cut ups
+      */
+      function hueToRgb(p, q, t) {
+        if (t < 0) t += 1;
+        if (t > 1) t -= 1;
+        if (t < 1/6) return p + (q - p) * 6 * t;
+        if (t < 1/2) return q;
+        if (t < 2/3) return p + (q - p) * (2/3 - t) * 6;
+        return p;
+      }
+      function hslToRgb(h, s, l) {
+        let r, g, b;
+
+        if (s === 0) {
+          r = g = b = l; // achromatic
+        } else {
+          const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+          const p = 2 * l - q;
+          r = hueToRgb(p, q, h + 1/3);
+          g = hueToRgb(p, q, h);
+          b = hueToRgb(p, q, h - 1/3);
+        }
+
+        return Math.round(r * 255).toString(16) + Math.round(g * 255).toString(16) + Math.round(b * 255).toString(16);
+      }
+
+      const worker = new Worker("worker.js")
+      
+      let scaledHeight, scaledWidth, active, running, ants, values, steps, instructions, scale;
+      
+      function reset() {
+        /* stop running */
+        active = false;
+        running = false;
+
+        /* Collect Values from Inputs and reset HTML*/
+        scale = document.getElementById("scale").value || 1;
+        let widthBox = document.getElementById("width").value;
+        let heightBox = document.getElementById("height").value;
+        let totalAnts = parseInt(document.getElementById("totalAnts").value);
+        document.getElementById("start").innerText = "Start";
+
+        /* Calculate the height and width values*/
+        let width, height;
+        if (heightBox !== "" && !heightBox.match(/[^0-9]/g)) {
+          height = parseInt(heightBox);
+        } else {
+          height = window.innerHeight;
+        }
+        if (widthBox === "") {
+          width = window.innerWidth;
+        } else if (!widthBox.match(/[^0-9]/g)) {
+          width = parseInt(widthBox);
+        } else {
+          width = height;
+        }
+        scaledWidth =  ~~(width / scale);
+        scaledHeight = ~~(height / scale);
+
+        /*Canvas manipulation*/
+        let canvas = document.getElementById("canvas");
+        let newCanvas = document.createElement("canvas");
+        newCanvas.id = "canvas";
+        newCanvas.width = width;
+        newCanvas.height = height;
+        canvas.replaceWith(newCanvas);
+        canvas = newCanvas.transferControlToOffscreen();
+
+        /* reinitialize virtual board*/
+        values = [];
+        for(let i = 0; values.length < scaledWidth; i += 1) {
+          values[i] = [];
+          for(let j = 0; values[i].length < scaledHeight; j += 1) {
+            values[i][j] = 0;
+          }
+        }
+
+        /* collect instructions from input and calculate into numbers */
+        const instr = document.getElementById("instructions");
+        instructions = instr.value.replace(/[^LRFBlrfb]/g, "").split("").map(function (item) {
+          switch(item) {
+            case("L"):
+            case("l"): return 3;
+            case("R"):
+            case("r"): return 1;
+            case("B"):
+            case("b"): return 2;
+            case("F"):
+            case("f"):
+            default: return 0;
+          }
+        });
+
+        /* Calculate color values for each step using hsl */
+        console.log(document.getElementById("sameColor"))
+        if (document.getElementById("sameColor").checked) {
+          const step = 1 / instructions.length;
+          h = 0;
+          const colors = ["#252525"];
+          for(let i = 1; i < instructions.length; i++) {
+            colors.push("#" + hslToRgb(h, .5, .5));
+            h += step;
+          }
+          ants = [];
+          for (let i = 0; i < totalAnts; i += 1) {
+            ants.push({ x: ~~(scaledWidth / 2), y: ~~(scaledHeight / 2), facing: 0, colors });
+          }
+        } else {
+          const step = 1 / instructions.length / totalAnts;
+          let h = 0;
+          ants = [];
+          for (let i = 0; i < totalAnts; i += 1) {
+            let colors = ["#252525"];
+            for(let j = 1; j < instructions.length; j++) {
+              colors.push("#" + hslToRgb(h, .5, .5));
+              h += step
+            }
+            ants.push({ x: ~~(scaledWidth / 2), y: ~~(scaledHeight / 2), facing: 0, colors });
+          }
+        }
+        worker.postMessage({
+          type: "data",
+          ...{scaledHeight, scaledWidth, active, running, ants, values, canvas, steps, instructions, scale}
+        }, [canvas])
+      }
+
+      function start() {
+        /* Stop */
+        if (running) {
+          document.getElementById("start").innerText = "Start";
+          running = false;
+          worker.postMessage({
+            type: "data",
+            ...{ running }
+          });
+        /* Start */
+        } else {
+          if (!active) {
+            reset();
+          }
+          document.getElementById("start").innerText = "Stop";
+          active = true;
+          running = true;
+          steps = parseInt(document.getElementById("steps").value);
+          worker.postMessage({
+            type: "data",
+            ...{ running, active, steps }
+          });
+          worker.postMessage({ type: "start" });
+        }
+      }
+      
+      window.onload = function() {
+        document.getElementById("steps").onchange = (e) => {
+          worker.postMessage({ type: "data", steps: e.target.value });
+        }
+        reset();
+      }
+    </script>
+    <style>
+      *::-webkit-scrollbar {
+        display: none;
+      }
+      input[type=number]::-webkit-inner-spin-button {
+        display: none;
+      }
+      body {
+        margin: 0;
+        background-color: black;
+      }
+      #body {
+        width: 100vw;
+        height: 100vh;
+      }
+      #canvas {
+        z-index: -1;
+        position: absolute;
+        top: 0;
+        right: 0;
+        bottom: 0;
+        left: 0;
+        margin: auto;
+        outline: white solid 1px;
+      }
+      #controls {
+        background-color: white;
+        padding: 10px 10px;
+        width: fit-content;
+        border-radius: 5px;
+        opacity: 10%;
+        position: absolute;
+        right: 0;
+        bottom: 0;
+        left: 0;
+        margin: auto;
+      }
+      #speed {
+        background-color: white;
+        padding: 10px 10px;
+        width: fit-content;
+        border-radius: 5px;
+        opacity: 10%;
+        position: absolute;
+        right: 0;
+        top: 0;
+        left: 0;
+        margin: auto;
+      }
+      #controls:hover, #speed:hover, #controls:focus-within {
+        opacity: 100%;
+      }
+      #controls > .control {
+        display: inline-block;
+      }
+      .for {
+        display: block;
+      }
+      .input {
+        display: block;
+      }
+      #totalAnts {
+        width: 20px;
+      }
+      #steps {
+        width: 500px;
+      }
+      #width {
+        width: 30px;
+      }
+      #height {
+        width: 30px;
+      }
+      #scale {
+        width: 30px;
+      }
+      #instructions {
+        width: 80px;
+      }
+      .inline {
+        display: inline;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="body">
+      <canvas id="canvas"></canvas>
+      <div id="speed">
+        <div class="control">
+          <label class="for" for="steps">Speed</label>
+          <input id="steps" class="input" type="range" min="1" max="2000" value="500"/>
+        </div>
+      </div>
+      <div id="controls">
+        <div class="control">
+          <label class="for" for="totalAnts">Ants</label>
+          <input id="totalAnts" class="input" type="number" value="1"/>
+        </div>
+        <div class="control">
+          <label class="for" for="width">Width</label>
+          <input id="width" class="input"/>
+        </div>
+        <div class="control">
+          <label class="for" for="height">Height</label>
+          <input id="height" class="input"/>
+        </div>
+        <div class="control">
+          <label class="for" for="height">Scale</label>
+          <input id="scale" class="input" type="number" min="1" value="1"/>
+        </div>
+        <div class="control">
+          <label class="for" for="instructions">Instructions</label>
+          <input id="instructions" class="input" value="LR"/>
+        </div>
+        <div class="control">
+          <label class="for inline" for="colors">Ants same color</label>
+          <input id="sameColor" class="input inline" type="checkbox"/>
+        </div>
+        <button id="start" onclick="start()">Start</button>
+        <button id="reset" onclick="reset()">Reset</button>
+      </div>
+    </div>
+  </body>
+</html>
