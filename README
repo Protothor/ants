@@ -1,1 +1,9 @@
+Enjoy this "game" at [https://protothor.github.io/ants/](https://protothor.github.io/ants/ "https://protothor.github.io/ants/")
+
 This is called "ants" after Langton's Ants. It is deeply incorrect because it's more like the turmites. I dunno, just enjoy the fun part of the page by making fun patterns.
+
+You can set the width, height, and scale as a base (width can be given a non-number option to make it a match to height).
+
+You can also set the instructions (lbfb) left, forward, right or backward.
+
+You can also add a number of ants.
